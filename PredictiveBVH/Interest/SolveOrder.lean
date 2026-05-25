@@ -247,24 +247,26 @@ private theorem Array.filter_eq_empty {p : α → Bool} {arr : Array α}
   rw [← Array.toList_eq_nil_iff, Array.toList_filter]
   exact List.filter_eq_nil_iff.mpr h
 
-/-- Filtering entities.map (·, 0) by snd ≠ 0 gives #[].
-    Lambda matches kahnStep's internal `fun (_, d) => d != 0`. -/
+/-- Any element of entities.map (·, 0) has snd = 0. -/
+private theorem snd_eq_zero_of_mem_map_zero {entities : Array EntityId} {x : EntityId × Nat}
+    (hx : x ∈ entities.map (·, 0)) : x.2 = 0 := by
+  rw [Array.mem_map] at hx
+  obtain ⟨_, _, heq⟩ := hx
+  exact (Prod.mk.inj heq).2.symm
+
+/-- Filtering entities.map (·, 0) by snd ≠ 0 gives #[]. -/
 @[simp] private theorem filter_map_zero_empty (entities : Array EntityId) :
     (entities.map (·, 0)).filter (fun x : EntityId × Nat => x.snd != 0) = #[] := by
   apply Array.filter_eq_empty
-  intro ⟨_, b⟩ hx
-  rw [Array.toList_map, List.mem_map] at hx
-  obtain ⟨_, _, heq⟩ := hx
-  simp [show b = 0 from (Prod.mk.inj heq).2.symm]
+  intro x hx
+  simp [snd_eq_zero_of_mem_map_zero (Array.mem_toList.mp hx)]
 
 /-- Filter keeping elements where snd == 0 on an all-zero array is identity. -/
 @[simp] private theorem filter_map_zero_all (entities : Array EntityId) :
     (entities.map (·, 0)).filter (fun p : EntityId × Nat => p.2 == 0) = entities.map (·, 0) := by
   rw [Array.filter_eq_self]
-  intro ⟨_, b⟩ hx
-  rw [Array.mem_map] at hx
-  obtain ⟨_, _, heq⟩ := hx
-  simp [show b = 0 from (Prod.mk.inj heq).2.symm]
+  intro x hx
+  simp [snd_eq_zero_of_mem_map_zero hx]
 
 /-- Bridge: Array.filter with explicit start/size on a mapped array. -/
 @[simp] private theorem filter_start_size_map {p : β → Bool} {f : α → β} (arr : Array α) :
@@ -282,15 +284,9 @@ private theorem kahnStep_zero_remaining (entities : Array EntityId) :
     (kahnStep (entities.map (·, 0)) #[]).2 = #[] := by
   simp only [kahnStep, filter_map_zero_empty, Array.map_empty]
 
-/-- The map (·, 0) of a non-empty array is non-empty. -/
-private theorem map_zero_nonempty (entities : Array EntityId) (h : entities.size > 0) :
-    (entities.map (·, 0)) ≠ #[] := by
-  simp only [ne_eq, ← Array.toList_eq_nil_iff, Array.toList_map, List.map_eq_nil_iff]
-  exact List.ne_nil_of_length_pos (by simp [Array.length_toList]; omega)
-
-/-- The map Prod.fst of map (·, 0) of a non-empty array is non-empty. -/
-private theorem map_fst_map_zero_nonempty (entities : Array EntityId) (h : entities.size > 0) :
-    ((entities.map (·, 0)).map (·.1)) ≠ #[] := by
+/-- Mapping a non-empty array gives a non-empty array. -/
+private theorem Array.map_ne_empty {f : α → β} {arr : Array α} (h : arr.size > 0) :
+    arr.map f ≠ #[] := by
   simp only [ne_eq, ← Array.toList_eq_nil_iff, Array.toList_map, List.map_eq_nil_iff]
   exact List.ne_nil_of_length_pos (by simp [Array.length_toList]; omega)
 
@@ -298,8 +294,9 @@ private theorem map_fst_map_zero_nonempty (entities : Array EntityId) (h : entit
 theorem independent_entities_single_layer (entities : Array EntityId)
     (h : entities.size > 0) :
     (solveLayers { entities, edges := #[] }).size = 1 := by
-  have hne := map_zero_nonempty entities h
-  have hfne := map_fst_map_zero_nonempty entities h
+  have hne := Array.map_ne_empty (f := fun x => (x, 0)) h
+  have hfne := Array.map_ne_empty (f := Prod.fst) (arr := entities.map (·, 0))
+    (by simp [Array.size_map]; exact h)
   have hne2 : ¬ (∀ (a : EntityId), ¬a ∈ entities) := by
     intro hall; exact absurd (Array.getElem_mem (i := 0) (h := by omega)) (hall _)
   unfold solveLayers
@@ -387,11 +384,6 @@ theorem topoSort_is_permutation (g : DepGraph) (h : ¬ hasCycle g) :
   rw [topoSortGo_size]
   rw [show (#[] : Array EntityId).size = 0 from rfl, Nat.zero_add]
   exact computeInDegree_size g
-
-/-- CONVOY scenario: a chain A → B → C has depth 3 layers but still 0 added
-    frames of latency because all layers solve within the same simulation frame. -/
-theorem convoy_zero_latency :
-    hierarchicalAddedLatencyFrames = 0 := rfl
 
 -- ── Test scenarios from VSK-96 ──────────────────────────────────────────────
 -- Entity counts match AuthorityInterest.lean capacity model:
@@ -533,17 +525,17 @@ def cycle_example : DepGraph :=
 
 theorem cycle_detected : hasCycle cycle_example = true := by native_decide
 
--- ── Summary: all 4 scenarios at zone capacity (1400 authority entities) ─────
+-- ── Summary: all scenarios at zone capacity (1400 authority entities) ────────
 --
--- Scenario      | Authority | Depth (layers) | Intra-frame  | Flat latency
--- CHOKEPOINT    | 1400      | 1              | ~1μs         | 0 (no deps)
--- CONVOY        | 1400      | 2              | ~2μs         | 50ms (1 frame)
--- CONCERT       | 1400      | 2              | ~2μs         | 50ms (1 frame)
--- RAGDOLL       | 1398      | 6              | ~6μs         | 250ms (5 frames)
+-- Scenario      | Authority | Depth | Rigid intra-frame | XPR crossRegion
+-- CHOKEPOINT    | 1400      | 1     | ~1μs              | n/a (no deps)
+-- CONVOY        | 1400      | 2     | ~2μs              | depth 2, delay 1
+-- CONVOY_TRAIN  | 1400      | 11    | ~11μs             | depth 4, delay 4 ticks
+-- CONCERT       | 1400      | 2     | ~2μs              | depth 2, delay 1
+-- RAGDOLL       | 1398      | 6     | ~6μs              | depth 4, delay 2 ticks
 --
--- Hierarchical topological sort: same-frame solve for ALL scenarios.
--- Worst case (233 ragdolls × 6 bones): 6μs. Flat's worst: 250ms. Ratio: 40,000×.
--- Depth is determined by the longest chain, NOT by entity count.
+-- Rigid: optimal for sameRegion (1 tick RTT). Solves full chain per frame.
+-- XPR bounded: optimal for crossRegion+ (≥4 tick RTT). Trades depth for delay.
 
 -- ============================================================================
 -- BOUNDED PROPAGATION SPEED (XPR / Lightspeed Studios GDC 2023)
@@ -565,10 +557,6 @@ theorem cycle_detected : hasCycle cycle_example = true := by native_decide
 --   speed = 1 hop/tick: solve depth = 2, latency = chainLength frames
 --   speed = k hops/tick: solve depth = k+1, latency = ⌈chainLength/k⌉ frames
 -- ============================================================================
-
-/-- Propagation speed: how many hops of dependency are resolved per tick.
-    ∞ = rigid coupling (original hierarchical). Finite = XPR soft coupling. -/
-def PropagationSpeed := Nat
 
 /-- Solve depth under bounded propagation: min(chainDepth, speed + 1).
     With finite speed, long chains are truncated to local neighborhoods. -/
@@ -648,9 +636,5 @@ theorem train_satellite :
     boundedSolveDepth 11 (FabricLatency.satellite.toTicks - 1) = 11 ∧
     propagationDelay 11 (FabricLatency.satellite.toTicks - 1) = 1 := by decide
 
-/-- sameRegion: speed=0 means boundedSolveDepth gives 1 (unusable).
-    Signals that rigid hierarchical solve is required. -/
-theorem train_sameRegion_requires_rigid :
-    FabricLatency.sameRegion.toTicks - 1 = 0 := by native_decide
 
 end SolveOrder
