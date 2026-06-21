@@ -1,10 +1,10 @@
 -- SPDX-License-Identifier: MIT
 -- Copyright (c) 2026-present K. S. Ernest (iFire) Lee
 
-import PredictiveBVH.Primitives.Types
-import PredictiveBVH.Formulas.Formula
-import PredictiveBVH.Protocol.Fabric
-import PredictiveBVH.Relativistic.NoGod
+import Shared.Types
+import PredictiveBvh.core.Formula
+import FabricProtocol.core.Fabric
+import Rebac.core.NoGod
 
 open PredictiveBVH.Relativistic
 
