@@ -2,6 +2,7 @@
 -- Copyright (c) 2026-present K. S. Ernest (iFire) Lee
 
 import Mathlib.Tactic.Ring
+import Shared.Types
 
 -- ============================================================================
 -- LASSO UV MAPPING — FORMAL SPECIFICATION
@@ -81,13 +82,11 @@ import Mathlib.Tactic.Ring
 
 namespace LassoMapping
 
-/-- 3-vector in Godot 4 world space / XRWorldSpace (μm).
-    Godot uses right-handed: +X right, +Y up, +Z toward viewer (FORWARD = −Z). -/
-structure Vec3 where
-  x : Int  -- right  (+X)
-  y : Int  -- up     (+Y)
-  z : Int  -- toward viewer (+Z); canvas at z = −1 500 000, source at z = −1 400 000
-  deriving Repr, DecidableEq
+-- 3-vector in Godot 4 world space / XRWorldSpace (μm).
+-- Godot uses right-handed: +X right, +Y up, +Z toward viewer (FORWARD = −Z).
+-- Field semantics: x = right, y = up, z = toward viewer (+Z);
+--   canvas at z = −1 500 000, source at z = −1 400 000.
+abbrev Vec3 := _root_.Vec3
 
 -- ── Allocentric vs Egocentric direction constants ───────────────────────────
 -- Godot 4 exposes two sets of named direction constants:
